@@ -1,0 +1,122 @@
+using UdonSharp;
+using UnityEngine;
+using VRC.SDKBase;
+using VRC.Udon;
+using UnityEngine.XR;
+
+public class QvDash : UdonSharpBehaviour
+{
+    public LineRenderer lineRenderer;
+    public Transform penTip; // ペンの先端
+    public float minDistance = 0.01f; // 最小移動距離
+    public Color penColor = Color.black; // ペンの色
+
+    private Vector3 lastPosition;
+    private bool isDrawing = false; // トリガーの状態を管理するフラグ
+
+    [SerializeField]
+    private Material lineMaterial; // シェーダー付きのマテリアルをインスペクターで指定
+
+    public GameObject movingObjectPrefab; // 移動するオブジェクトのプレハブ
+    private GameObject movingObject; // 実際に移動するオブジェクト
+    private int currentPointIndex = 0; // LineRenderer の現在のポイントインデックス
+    private bool isMoving = false; // オブジェクトの移動フラグ
+    public float objectSpeed = 2.0f; // オブジェクトの移動速度
+
+    void Start()
+    {
+        // 初期設定
+        lineRenderer.positionCount = 0;
+        lineRenderer.startWidth = 0.01f;
+        lineRenderer.endWidth = 0.01f;
+        lineRenderer.material = lineMaterial;
+        lineRenderer.material.color = penColor;
+
+        // ペンの初期位置を記録
+        if (penTip != null)
+        {
+            lastPosition = penTip.position;
+        }
+
+        // 移動オブジェクトを生成
+        if (movingObjectPrefab != null)
+        {
+            movingObject = Instantiate(movingObjectPrefab);
+            movingObject.SetActive(false); // 初期状態では非表示
+        }
+    }
+
+    void Update()
+    {
+        // "Fire2" と "Oculus_CrossPlatform_SecondaryIndexTrigger" の入力を検出
+        bool isFire2Pressed = Input.GetButton("Fire2"); // キーボードまたはマウス
+        float triggerValue = Input.GetAxis("Oculus_CrossPlatform_SecondaryIndexTrigger"); // VRトリガー
+        bool isTriggerPressed = triggerValue > 0.1f; // しきい値で判定
+
+        // どちらかの入力が有効であれば描画を開始
+        isDrawing = isFire2Pressed || isTriggerPressed;
+
+        // 描画が有効な場合にペンの移動を検出して描画を行う
+        if (isDrawing && penTip != null)
+        {
+            if (Vector3.Distance(lastPosition, penTip.position) > minDistance)
+            {
+                AddPoint(penTip.position);
+                lastPosition = penTip.position;
+            }
+        }
+
+        // オブジェクトの移動を管理
+        if (!isDrawing && movingObject != null && lineRenderer.positionCount > 0)
+        {
+            MoveObjectAlongLine();
+        }
+    }
+
+    private void AddPoint(Vector3 point)
+    {
+        int pointCount = lineRenderer.positionCount;
+        lineRenderer.positionCount = pointCount + 1;
+        lineRenderer.SetPosition(pointCount, point);
+
+        // 新しい線が描かれ始めたら移動オブジェクトをリセットして開始
+        if (pointCount == 0 && movingObject != null)
+        {
+            movingObject.transform.position = point;
+            currentPointIndex = 0;
+            isMoving = true;
+            movingObject.SetActive(true);
+        }
+    }
+
+    private void MoveObjectAlongLine()
+    {
+        if (isMoving && currentPointIndex < lineRenderer.positionCount - 1)
+        {
+            Vector3 startPoint = lineRenderer.GetPosition(currentPointIndex);
+            Vector3 endPoint = lineRenderer.GetPosition(currentPointIndex + 1);
+
+            movingObject.transform.position = Vector3.MoveTowards(movingObject.transform.position, endPoint, objectSpeed * Time.deltaTime);
+
+            if (Vector3.Distance(movingObject.transform.position, endPoint) < 0.01f)
+            {
+                currentPointIndex++;
+            }
+        }
+        else if (currentPointIndex >= lineRenderer.positionCount - 1)
+        {
+            isMoving = false; // 移動完了
+            movingObject.SetActive(false);
+        }
+    }
+
+    // ペンのリセット
+    public void ClearLine()
+    {
+        lineRenderer.positionCount = 0;
+        if (movingObject != null)
+        {
+            movingObject.SetActive(false);
+        }
+    }
+}
